@@ -1,0 +1,413 @@
+---
+title: "NYPD Shooting Incidents - Data Exploration"
+date: "23/12/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Import necessary libraries and the NYPD shooting csv file:
+
+```{r import library, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(lubridate) # For use in converting date/time variables
+```
+
+```{r import data, message = FALSE, warning = FALSE}
+url = "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+shooting_csv = read_csv(url)
+```
+
+# Identification of bias
+
+Before starting with data exploration, I want to first discuss the reliability of the data source and identify potential sources of bias. This data set only contains information on *reported* cases of shooting incidents that took place in New York City. Therefore, the analysis in this document is performed on a subset of all potential shooting incidents. It excludes shootings that were not reported nor captured by the NYPD. As a result, the real number of total cases may differ from the official records.
+
+I believe the data source is reliable because the data comes from police reports. Most of the data categories don't contain bias because it is based on facts, for example, date, time of shooting, location, and victim details.
+
+However, there are three fields that could lead to bias. These are the fields relating to the age, sex and race of the perpetrator. These three perpetrator fields contain information on potential suspects,  which leads me to think that most of the data on the perpetrator comes from eye-witness reports from the surviving victims or nearby witnesses. This means that the information from these three columns cannot be considered as hard facts, and therefore can contain bias. For example, it can be difficult to tell the age of a person you don't know. If the shooter is fully clothed and wearing a mask, then it can be difficult to tell the sex or race of the person. The victims could default to describing the shooter as a particular race due to the victim's societal bias.
+
+# Initial look at data
+
+First lets see what types of data the csv file contains. The subheadings are as follows:
+```{r see headers}
+colnames(shooting_csv) 
+```
+
+There are 19 different field names. Out of these, there are 8 headings that contains information that I don't know how to utilize (since I'm not from the US), or not useful for analysis. They are:  
+1. Incident_key  
+2. Precinct  
+3. Jurisdiction_code  
+4. x_coord_cd  
+5. y_coord_cd  
+6. Latitude  
+7. Longitude  
+8. Lon_Lat  
+
+I will remove the above 8 columns from the data table.
+
+```{r tidy data, message = FALSE, warning = FALSE}
+shooting <- shooting_csv %>%
+  select(-c(INCIDENT_KEY, PRECINCT, JURISDICTION_CODE, X_COORD_CD, Y_COORD_CD, Latitude,
+            Longitude, Lon_Lat))
+```
+
+Now check for missing data:
+```{r Check NA}
+sum(is.na(shooting))
+sum(is.na(shooting$OCCUR_DATE))
+sum(is.na(shooting$OCCUR_TIME))
+sum(is.na(shooting$BORO))
+sum(is.na(shooting$LOCATION_DESC))
+sum(is.na(shooting$STATISTICAL_MURDER_FLAG))
+sum(is.na(shooting$PERP_AGE_GROUP))
+sum(is.na(shooting$PERP_SEX))
+sum(is.na(shooting$PERP_RACE))
+sum(is.na(shooting$VIC_AGE_GROUP))
+sum(is.na(shooting$VIC_SEX))
+sum(is.na(shooting$VIC_RACE))
+```
+This NYPD shooting dataset contains some missing data regarding two main categories: location description and information regarding the perpetrator (particularly age, sex and race). This is to be expected. The police do not always know who the perpetrators are, and the location description appears to only refer to general locations such as hotel, bar, supermarket, etc. Shooting incidents that occur in an alley probably doesn't have a suitable description, hence the missing data. 
+
+# Data Exploration
+
+Lets do some basic data exploration to get a better understanding of the data. I will mainly focus on the victims in this analysis, because there are many missing data points regarding the shooter. I will use questions or comparisons as subheadings to organize this section. 
+
+## How many shootings resulted in death?
+
+The statistical_murder_flag variable indicates whether or not the shooting incident resulted in the victim's death, which would indicate murder. 
+
+```{r Murder cases}
+# Length of this column also indicates total cases because it contains no missing data
+length(shooting$STATISTICAL_MURDER_FLAG) 
+
+murders <- sum(shooting$STATISTICAL_MURDER_FLAG == TRUE)
+murders
+
+ratio <- sum(shooting$STATISTICAL_MURDER_FLAG == TRUE)/length(shooting$STATISTICAL_MURDER_FLAG)
+ratio
+```
+This dataset contains 23585 cases of shootings, out of which 4500 are considered to be cases of murder. According to the footnotes from the data source, the STATISTICAL_MURDER_FLAG variable is defined to be shootings that resulted in the victim’s death and would be counted as a murder. Using this definition, the result would indicate that only 19% of shootings result in death, and that the survival rate for shootings in New York is 81%. This is a very interesting result to me, because I expected the death rate for shooting incidents to be higher than 1 in 5 cases. My initial uneducated guess would have been a death rate of around 40—50% because of how dangerous gunshot wounds can be.
+
+## Does race affect the rate of shooting incidents?
+
+Lets see the racial distribution of all the shooting incidents:
+
+```{r Visualize shooting rate of victim based on race, echo=TRUE, fig.width=18, fig.height=14}
+sort(table(shooting$VIC_RACE), decreasing = TRUE)
+
+shooting %>%
+  ggplot(aes(x=VIC_RACE, fill = VIC_RACE)) + 
+  geom_bar() + 
+  theme(text=element_text(size=28), axis.text.x = element_text(angle = 90)) + 
+  labs(x = "Victim race", y = "Total shootings", title = "Total Shootings over 15 years in New York City")
+
+total_cases <- length(shooting$VIC_RACE)
+total_cases
+
+black_cases <- sum(shooting$VIC_RACE == "BLACK") / total_cases * 100
+cat(black_cases, '%')
+
+white_hisp_cases <- sum(shooting$VIC_RACE == "WHITE HISPANIC") / total_cases * 100
+cat(white_hisp_cases, '%')
+
+black_hisp_cases <- sum(shooting$VIC_RACE == "BLACK HISPANIC") / total_cases * 100
+cat(black_hisp_cases, '%')
+
+top_3 <- black_cases + white_hisp_cases + black_hisp_cases
+cat(top_3, '%')
+
+white_cases <- sum(shooting$VIC_RACE == "WHITE") / total_cases * 100
+cat(white_cases, '%')
+```
+
+The analysis shows that the top three racial groups make up a staggering 95.7% of all shooting victims in New York since 2006. Black people were exposed to the most incidents at 71.5%, followed by white and black Hispanic people at 14.6% and 9.5%, respectively. White Americans only make up 2.6% of all shooting victims. 
+
+There is a large disparity between the victim races. Shootings are disproportionate against black people, which is to be expected because from news reports I am aware that racism is still a big problem in America. 
+
+## Does race affect death rate?
+
+The graph above illustrated all shootings, but lets take a closer look at the cases that are considered to be murders to see if the same pattern can be seen.
+
+```{r Visualize death rate of victim based on race, echo=TRUE, fig.width=18, fig.height=14}
+race_death<- shooting %>%
+  filter(STATISTICAL_MURDER_FLAG == TRUE)
+sort(table(race_death$VIC_RACE), decreasing = TRUE)
+
+race_death %>%
+  ggplot(aes(x=VIC_RACE, fill = VIC_RACE)) + 
+  geom_bar() + 
+  theme(text=element_text(size=28), axis.text.x = element_text(angle = 90)) +
+  labs(x = "Victim race", y = "Total shootings", title = "Total Shootings that are considered to be murder over a 15 year period in New York City")
+
+total_cases <- length(race_death$VIC_RACE)
+total_cases
+
+black_cases <- sum(race_death$VIC_RACE == "BLACK") / total_cases * 100
+cat(black_cases, '%')
+
+white_hisp_cases <- sum(race_death$VIC_RACE == "WHITE HISPANIC") / total_cases * 100
+cat(white_hisp_cases, '%')
+
+black_hisp_cases <- sum(race_death$VIC_RACE == "BLACK HISPANIC") / total_cases * 100
+cat(black_hisp_cases, '%')
+
+white_cases <- sum(race_death$VIC_RACE == "WHITE") / total_cases * 100
+cat(white_cases, '%')
+```  
+
+The top three racial groups that experience the most death is the same as in the total shootings, with black people at the top, followed by Hispanic white and black people. This is to be expected, since exposure to more shooting incidents greatly increases the number of deaths.
+ 
+## Does gender affect the rate of shooting incidents?
+
+Lets see if there is any difference between the amount of male and female victims:
+
+```{r Visualize shooting rate of victim based on sex, echo=TRUE, fig.width=18, fig.height=14}
+table(shooting$VIC_SEX)
+
+shooting %>%
+  ggplot(aes(x=VIC_SEX, fill = VIC_SEX)) + 
+  geom_bar() + 
+  theme(text=element_text(size=28)) + 
+  labs(x = "Victim gender", y = "Total shootings", title = "Total Shootings over 15 years in New York City")
+
+total_cases <- length(shooting$VIC_SEX)
+total_cases
+
+male_cases <- sum(shooting$VIC_SEX == "M") / total_cases * 100
+cat(male_cases, '%')
+
+female_cases <- sum(shooting$VIC_SEX == "F") / total_cases * 100
+cat(female_cases, '%')
+```
+
+There is a surprisingly large gap between male and female victims. The data shows that men are ten times more likely to get shot than women. This is a huge surprise for me and I can't come up with a hypothesis on why that is the case. 
+
+## What is the age group distribution of shooting victims?
+
+Lets see which age groups contain the most victims:
+
+```{r Age group distribution, echo=TRUE, fig.width=18, fig.height=14}
+age_data <- shooting %>%
+  filter(VIC_AGE_GROUP != 'UNKNOWN') # Drop data points with unknown age
+table(age_data$VIC_AGE_GROUP)
+
+age_data %>%
+  ggplot(aes(x=VIC_AGE_GROUP, fill = VIC_AGE_GROUP)) + 
+  geom_bar() + 
+  theme(text=element_text(size=28)) + 
+  labs(x = "Victim age group", y = "Total shootings", title = "Total Shootings over 15 years in New York City")
+
+combined <- shooting %>%
+  filter(VIC_AGE_GROUP=='18-24' | VIC_AGE_GROUP=='25-44')
+ratio <- length((combined$VIC_AGE_GROUP)) / total_cases * 100
+ratio
+```
+
+Two age groups make up the large majority, which are the 18-24 and 25-44 age groups. Together, they make up 81.9% of shooting victims. These two age groups are young adults and working class citizens, which means that they are also the most active age groups in the community. This result lines up with my expectations.
+
+## Are there any potential insights between solved and unsolved cases?
+
+I am interested to see if I can spot any interesting insights between  solved and unsolved cases. The data doesn't indicate whether the shooter was arrested or not, but for the current analysis, I will assume that if the police have information regarding the age, sex and race of the perpetrator, then that would mean that the police at least has an idea who was responsible.
+
+If the perpetrator's information is missing, then that means that the police have no information on the shooter. For analysis, I will define the number of unsolved cases to be the cases where the police have no leads on the shooter. I'm aware that simply because the police has general information on the shooter doesn't mean that they have been directly identified or arrested. But without more data, I can only assume that cases with missing perpetrator data are definitely unsolved, because having no information on the shooter also means that the shooter has escaped capture and thus have gotten away with the crime. I will therefore label the two groups as potentially solved and definitely unsolved.
+
+### Organize data
+
+I will split the data into two tables: the first table will contain cases where the police has general information on the shooter (i.e. there is data on the age, sex and race of the shooter), and a second section that contains cases that has no information on the perpetrator. 
+
+```{r Organize Data}
+PotentiallySolved <- shooting %>% filter(!is.na(shooting$PERP_AGE_GROUP))
+Unsolved <- shooting %>% filter(is.na(shooting$PERP_AGE_GROUP))
+
+total_PotentiallySolved <- length(PotentiallySolved$OCCUR_DATE) # Total cases of potentially solved shootings
+total_PotentiallySolved
+
+total_Unsolved <- length(Unsolved$OCCUR_DATE) # Total cases of definitely unsolved shootings
+total_Unsolved
+```
+
+After re-organizing, the PotentiallySolved data set contains 15290 cases, while the Unsolved data set contains 8295 cases.
+
+## Comparison between solved and unsolved cases
+
+Out of 23585 total cases of shootings, 8295 cases contain no information regarding the perpetrator. This shows that at least a third (or 35.2%) of all shooting incidents in New York are unsolved. Lets see what the ratio of murder cases are unsolved, and compare it to unsolved cases where the victims survived.  
+
+```{r Compare unsolved cases}
+total_murders <- sum(shooting$STATISTICAL_MURDER_FLAG == TRUE) # Total cases of all murders
+
+unsolved_murders <- sum(Unsolved$STATISTICAL_MURDER_FLAG == TRUE) # Number of unsolved murders
+unsolved_murders_ratio <- unsolved_murders / total_murders
+unsolved_murders_ratio
+
+survivors <- sum(shooting$STATISTICAL_MURDER_FLAG == FALSE) # Shootings that did not result in death
+unsolved_shootings <- sum(Unsolved$STATISTICAL_MURDER_FLAG == FALSE) 
+unsolved_shootings_ratio <- unsolved_shootings / survivors
+unsolved_shootings_ratio
+```
+
+This is another interesting statistic, because both ratios are around 35%. It appears that the ratio of unsolved murder cases is almost identical to the ratio of unsolved shootings where the victim survived. This is also the same ratio of all unsolved cases. This surprised me, because I thought that the
+murder category would contain a much larger percentage of unsolved cases since it is more likely to identify the shooter if the victim survived.
+
+## Do shootings increase over time?
+```{r Shooting over time, message = FALSE, warning = FALSE}
+over_time <- shooting %>%
+  mutate(val = 1) %>%
+  mutate(date = mdy(OCCUR_DATE)) %>%
+  mutate(month = month(date)) %>%
+  mutate(year = year(date)) %>%
+  group_by(month, year) %>%
+  summarise(total = sum(val))
+
+unique(over_time$month)
+unique(over_time$year)
+length(over_time$total)
+over_time
+```
+
+The new table consists of 12 unique months, and 15 unique years. I am expecting to have 12*15=180 total data points, which is the same size as the total column, which stores the cumulative shootings for the respective month. This leads me to believe that the data has been successfully grouped by month and year, so lets take a look at the plot of this table:
+
+```{r Plot for shooting over time, echo=TRUE, message = FALSE, warning = FALSE}
+over_time %>%
+  mutate(YearMonth = as.Date(paste0("30-", month,"-", year),"%d-%m-%Y")) %>%
+  ggplot(aes(x=YearMonth, y=total, group = 1)) + 
+  geom_line() + 
+  geom_point() + 
+  scale_x_date(date_labels = "%Y", date_breaks = '1 year') +
+  labs(x = "Date (Year)", y = "Total shootings per month", title = "Total monthly shootings over 15 years in New York City") 
+```
+  
+The graph shows that there is a cyclic sinusoidal pattern of total monthly shootings. It starts off low at the beginning of the year, but then rises sharply over the next few months and peaks during mid-year, around the July/August period. The total shootings then starts to drop over the next six months just as quickly as it rose, until it is back to its lowest rate in January. This result is interesting to me because and I did not expect that there would be any consistent patterns regarding monthly shooting data. 
+
+The large cyclic pattern was very consistent for 7 years from 2006 to 2013. From 2013 onwards, the number of shootings started to decrease compared to previous years. When the Covid19 pandemic started in early 2020, the total number of shooting cases rose exponentially, potentially because of increased tensions due to the virus and lock down, especially from those who opposed the mask mandate and vaccines.
+
+Due to this insight regarding a consistent annual cyclic pattern, my hypothesis is that the time of year has a big influence on total shootings. Lets find out if a model tuned to the month can make an accurate prediction of total monthly shootings.
+
+## Model
+
+I don't have any experience modelling data, so I will only present a simple model for this dataset. I decided to use a cubic polynomial equation to relate the month to the total shooting cases. 
+
+```{r Linear Model}
+mod <- lm(total ~ month + I(month^2) + I(month^3), data = over_time)
+summary(mod)
+
+over_time$pred <- predict(mod)
+over_time %>%
+  mutate(YearMonth = as.Date(paste0("01-", month,"-", year),"%d-%m-%Y")) %>%
+  ggplot() + 
+  geom_line(aes(x=YearMonth, y=total)) +
+  geom_point(aes(x=YearMonth, y=total)) +
+  geom_line(aes(x=YearMonth, y=pred), color = 'red') + 
+  geom_point(aes(x=YearMonth, y=pred), color = 'red') + 
+  scale_x_date(date_labels = "%Y", date_breaks = '1 year') +
+  labs(x = "Date (Month-Year)", y = "Total shootings per month", title = "Total monthly shootings over 15 years in New York City")
+```
+
+There is still room for improvement for this model. The sinusoidal pattern repeats every year until the beginning of 2020, which is when the Covid pandemic started. The data during this lock down period would not follow the same trend as previous years. Therefore, I chose to optimize the model a little bit by considering the data after January 2020 to be outliers, to see if excluding this portion of the dataset could lead to a better model. 
+
+```{r Linear Model Improvement}
+exclude_outliers <- over_time %>%
+  filter(year < 2020)
+
+print('Double check that 1 year or 12 months has been taken out:')
+length(over_time$year) - length(exclude_outliers$year)
+
+mod2 <- lm(total ~ month + I(month^2) + I(month^3), data = exclude_outliers)
+summary(mod2)
+
+exclude_outliers$pred2 <- predict(mod2)
+exclude_outliers %>%
+  mutate(YearMonth = as.Date(paste0("01-", month,"-", year),"%d-%m-%Y")) %>%
+  ggplot() + 
+  geom_line(aes(x=YearMonth, y=total)) + 
+  geom_point(aes(x=YearMonth, y=total)) +
+  geom_line(aes(x=YearMonth, y=pred2), color = 'blue') +
+  geom_point(aes(x=YearMonth, y=pred2), color = 'blue') + 
+  scale_x_date(date_labels = "%Y", date_breaks = '1 year') +
+  labs(x = "Date (Month-Year)", y = "Total shootings per month", title = "Total monthly shootings over 15 years in New York City")
+```
+
+## Conclusions
+
+The improved model still looks the same as before and is unable to predict the peaks of the cycles, and also failed to predict the reduced total shootings that occured after 2017. The adjusted R-squared value of this model is only 0.29, so the model is really bad. A better model would be one that is more complex than a linear model, as well as incorporating more variables, such as victim race, age group and location data.
+
+I'm not familiar with events that occur in the United States leading up to this period, so I don't have any personal insights into why shootings would increase until August, and then sharply drop. Looking at the data, I notice that the majority of the victims are in the 18-24 and 25-44 age groups. I consider people in the 18 to 30 year age group as young adults with most of them either attending college or just started at their first jobs. I don't have data to support this statement, so it's just a personal assumption. I also know that summer in the US starts in July, so students have their summer breaks in July and August. My thought is that the period leading up to summer break has many more young adults roaming the streets and causing trouble, which might have the effect of increasing monthly shootings. From a financial point of view, white Americans tend to have more wealth than black and Hispanic Americans, so my guess is that young white students tend to vacation in safer neighborhoods, or even overseas, while black and Hispanic students stay where they are. This is perhaps why when a shooting does occur, these racial groups are more likely to get shot.
+
+# Updated edits (after first submission):
+
+
+## Do shootings increase over time?
+
+The graph of shootings over time when shown in months appear to be sinusoidal in nature, and I don't yet know how to model something that complicated. Therefore, to make the modelling section a little better, I will condense it to annual total shootings:
+
+```{r Shooting over time in years, message = FALSE, warning = FALSE}
+annual_shootings <- shooting %>%
+  mutate(val = 1) %>%  ## Set val=1 so that there is something numeric to sum when grouping by year
+  mutate(date = mdy(OCCUR_DATE)) %>%
+  mutate(year = year(date)) %>%
+  group_by(year) %>%
+  summarise(total = sum(val))
+
+unique(annual_shootings$year)
+length(annual_shootings$total)
+annual_shootings
+```
+
+
+```{r Plot for shooting over time in years, echo=TRUE, message = FALSE, warning = FALSE}
+annual_shootings %>%
+  #mutate(YearMonth = as.Date(paste0("01-", month,"-", year),"%d-%m-%Y")) %>%
+  ggplot(aes(x=year, y=total, group = 1)) + 
+  geom_line() + 
+  geom_point() + 
+  scale_x_continuous(n.breaks = 15) +
+  labs(x = "Date (Year)", y = "Total shootings per year", title = "Total annual shootings over 15 years in New York City") 
+```
+
+## Model
+
+```{r Annual Linear Model}
+mod <- lm(total ~ year + I(year^2) + I(year^3), data = annual_shootings)
+summary(mod)
+
+annual_shootings$pred <- predict(mod)  ## Add predictions to a new column
+annual_shootings %>%
+  #mutate(YearMonth = as.Date(paste0("01-", month,"-", year),"%d-%m-%Y")) %>%
+  ggplot() + 
+  geom_line(aes(x=year, y=total)) +
+  geom_point(aes(x=year, y=total)) +
+  geom_line(aes(x=year, y=pred), color = 'red') + 
+  geom_point(aes(x=year, y=pred), color = 'red') + 
+  scale_x_continuous(n.breaks = 15) +
+  labs(x = "Date (Year)", y = "Total shootings per year", title = "Total annual shootings over 15 years in New York City")
+```
+
+This is the model that I made to predict annual shootings. I chose to use a cubic polynomial equation to relate the year to total annual shootings, because I wanted my model to be able to curve. The recent spike in shootings in 2020 is a large outlier that skews my prediction, so I chose to improve my model by excluding the 2020 data.
+
+
+```{r Annual Linear Model Improvement}
+exclude_outliers <- annual_shootings %>%
+  filter(year < 2020)
+
+print('Double check that 1 year or 12 months has been taken out:')
+length(annual_shootings$year) - length(exclude_outliers$year)
+
+mod2 <- lm(total ~ year + I(year^2) + I(year^3), data = exclude_outliers)
+summary(mod2)
+
+exclude_outliers$pred2 <- predict(mod2)
+exclude_outliers %>%
+  ggplot() + 
+  geom_line(aes(x=year, y=total)) + 
+  geom_point(aes(x=year, y=total)) +
+  geom_line(aes(x=year, y=pred2), color = 'blue') +
+  geom_point(aes(x=year, y=pred2), color = 'blue') + 
+  scale_x_continuous(n.breaks = 15) +
+  labs(x = "Date (Year)", y = "Total shootings per year", title = "Total annual shootings over 15 years in New York City")
+```
+
+```{r sessioninfo}
+sessionInfo()
+```

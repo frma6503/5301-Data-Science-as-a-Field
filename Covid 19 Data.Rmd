@@ -1,0 +1,211 @@
+---
+title: "Covid 19 Data"
+date: "12/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data Source and biases
+
+The data used in this exploration was obtained from a data repository that is managed by the Johns Hopkins University Center for Systems Science and Engineering (JHU CSSE). The university aggregates data from many credible sources, such as the World Health Organization (WHO), European Centre for Disease Prevention and Control (ECDC), and the US CDC. The repository contains data not only on the United States, but also on most countries around the world. They used dozens of sources to get covid data on as many countries as possible. 
+
+The data sets in the repository track Covid19 statistics , such number of cases, deaths, and recoveries for many countries (and province/state if required).
+
+Since the data is gathered by a very reputable university, I trust that the data is reliable. However, it may still contain bias. Johns Hopkins University is not the ones who are personally collecting data. Instead, they are only aggregating data that is reported by each country. If the original data contains bias, then that bias will also transfer to the aggregated data.
+
+Covid19 data is difficult to gather accurately, because it mainly comes from health care facilities that test people to see if they are infected with the disease. The problem with Covid19 is that symptoms take up to two weeks to develop, and there are also people who can get infected but show no symptoms. These people should be counted together with the sick, because they are also capable of spreading the disease. But since they don't get checked, it becomes impossible to include this subset of people as part of the data. Covid19 testing is also not 100% effective. False Positive and False Negative tests are possible, so the data that is generated is not completely reliable. Furthermore, there are some countries who are not fully transparent with the world about their current Covid19 statistics. They may want to hide, or at least reduce, the number of cases and/or deaths related to Covid19 for political reasons, such as appearing to the public that they are handling to situation well. These are some of the reasons why the data in this repository cannot be viewed as completely accurate. Instead, they should be seen as a good approximation of the true Covid19 statistics of each country.
+
+
+# Import libraries
+
+Below are the libraries that I will use in this exploration.
+
+```{r import library, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(lubridate) # For use in converting date/time variables
+```
+
+# Import data
+
+Import all the datasets from the Johns Hopkins Github repository:
+
+```{r import data, message = FALSE, warning = FALSE}
+## Import the csv files. Note that they all begin the same way
+
+url_in <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+file_names <- c("time_series_covid19_confirmed_US.csv", 
+                "time_series_covid19_confirmed_global.csv",
+                "time_series_covid19_deaths_US.csv",
+                "time_series_covid19_deaths_global.csv",
+                "time_series_covid19_recovered_global.csv")
+urls <- str_c(url_in, file_names)
+
+us_cases <- read_csv(urls[1])
+global_cases <- read_csv(urls[2])
+us_deaths <- read_csv(urls[3])
+global_deaths <- read_csv(urls[4])
+global_recovered <- read_csv(urls[5])
+```
+# Tidy data
+
+Tidy the data by re-arranging the table in a more meaningful way using a pivot table. I won't be using the "Province/State", "Lat", or "Long" data columns, so I will be removing them here as well.
+
+```{r tidy datasets, message = FALSE, warning = FALSE}
+# Tidy global_cases:
+global_cases <- global_cases %>%
+  pivot_longer(cols = -c('Province/State', 'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "cases") %>%
+  select(-c('Province/State', Lat, Long))
+
+# Tidy global_deaths:
+global_deaths <- global_deaths %>%
+  pivot_longer(cols = -c('Province/State', 'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "deaths") %>%
+  select(-c('Province/State', Lat, Long))
+
+# Tidy global_recovered:
+global_recovered <- global_recovered %>%
+  pivot_longer(cols = -c('Province/State', 'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "recovery") %>%
+  select(-c('Province/State', Lat, Long))
+
+# Note that us_deaths contains a population column that is not present in us_cases. Do a full join to combine them into a complete dataset
+#US <- us_cases %>%
+#  full_join(us_deaths)
+```
+
+I live in South Africa, so for this analysis I want to filter out data that is related to my country.
+
+```{r Filter South Africa,  message = FALSE, warning = FALSE}
+SA_cases <- global_cases %>%
+  filter(`Country/Region` == 'South Africa') %>%
+  mutate(date = mdy(date)) # Change date into date object
+
+SA_deaths <- global_deaths %>%
+  filter(`Country/Region` == 'South Africa')  %>%
+  mutate(date = mdy(date)) # Change date into date object
+
+SA_recovered <- global_recovered %>%
+  filter(`Country/Region` == 'South Africa')  %>%
+  mutate(date = mdy(date)) # Change date into date object
+
+SA_data <- SA_cases %>% # Combine the above datasets into a single larger table
+  full_join(SA_deaths) %>%
+  full_join(SA_recovered)
+
+SA_data
+```
+
+# Visualize the data
+
+Below are the plots of the cases, deaths, and recoveries for South Africa:
+
+```{r Visualize the cases, message = FALSE, warning = FALSE}
+SA_data %>%
+  #filter(cases > 0) %>%
+  ggplot(aes(x = date, y = cases)) + 
+  geom_line(aes(color = "cases")) + 
+  geom_point(aes(color = "cases")) + 
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90)) + 
+  scale_x_date(date_labels = "%m-%Y", date_breaks = '2 month') +
+  labs(title = "Total Covid19 cases in South Africa", x='Date', y='Cases')
+```
+
+```{r Visualize the deaths, message = FALSE, warning = FALSE}
+SA_data %>%
+  #filter(cases > 0) %>%
+  ggplot(aes(x = date, y = deaths)) + 
+  geom_line(aes(color = "deaths")) + 
+  geom_point(aes(color = "deaths")) + 
+  scale_x_date(date_labels = "%m-%Y", date_breaks = '2 month') +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90)) + 
+  labs(title = "Total Covid19 deaths in South Africa", x='Date', y='Deaths')
+```
+
+
+```{r Visualize the recoveries, message = FALSE, warning = FALSE}
+SA_data %>%
+  #filter(cases > 0) %>%
+  ggplot(aes(x = date, y = recovery)) + 
+  geom_line(aes(color = "recovery")) + 
+  geom_point(aes(color = "recovery")) + 
+  scale_x_date(date_labels = "%m-%Y", date_breaks = '2 month') +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90)) + 
+  labs(title = "Total Covid19 recoveries in South Africa", y='Recoveries')
+```
+
+# Observations
+
+I found it interesting that all three plots (cases, deaths, and recoveries) show the same general shape. They start of level, then rises exponentially for two months and then stays level for another four months, before repeating again. In South Africa, there appears to have been three waves of high-volume infections.
+
+There seems to be an anomaly in the recovery data set. The data showed that there were no recoveries past August 2021. This doesn't make sense, so my personal theory is that the data sources that Johns Hopkins used no longer reported recovery data.
+
+This observation makes sense, because as more people get infected, the death rate would also rise roughly proportionally. As more people get infected, more people can also recover from it. It makes sense that the shape of all three graphs correspond with each other.
+
+# Monthly cases
+
+I want to see how the data looks when I aggregate the cases for each month. 
+
+```{r Get monthly cases}
+SA_data_dates <- SA_data %>%
+  filter(cases > 0) %>%
+  mutate(month = month(date)) %>%
+  mutate(year = year(date)) %>%
+  group_by(month, year) %>%
+  summarize(total = sum(cases))
+
+unique(SA_data_dates$month)
+unique(SA_data_dates$year)
+length(SA_data_dates$total)
+SA_data_dates
+```
+
+```{r Plot for monthly total cases, echo=TRUE, message = FALSE, warning = FALSE}
+SA_data_dates %>%
+  mutate(MonthYear = as.Date(paste0("30-", month,"-", year),"%d-%m-%Y")) %>%
+  ggplot(aes(x=MonthYear, y=total, group = 1)) + 
+  geom_line() + 
+  geom_point() + 
+  scale_x_date(date_labels = "%m-%Y", date_breaks = '2 months') +
+  labs(x = "Date (Year)", y = "Total cases per month", title = "Total monthly cases over 2 years in South Africa") 
+
+SA_data_dates
+```
+
+# Model
+
+Looking at the shape of the monthly cases, it appears to increase almost linearly with time. For that reason, I want to correlate the total number of monthly cases against time. Therefore, I created a linear model that is a function of both the month and the year:
+
+```{r Linear Model}
+mod <- lm(total ~ year + month, data = SA_data_dates)
+summary(mod)
+
+SA_data_dates$pred <- predict(mod)  ## Add predictions to a new column
+```
+```{r Visualize model}
+SA_data_dates %>%
+  mutate(MonthYear = as.Date(paste0("30-", month,"-", year),"%d-%m-%Y")) %>%
+  ggplot() + 
+  geom_line(aes(x=MonthYear, y=total)) +
+  geom_point(aes(x=MonthYear, y=total)) + 
+  geom_line(aes(x=MonthYear, y=pred), color = 'red') +
+  geom_point(aes(x=MonthYear, y=pred), color = 'red') +
+  scale_x_date(date_labels = "%m-%Y", date_breaks = '2 months') +
+  labs(x = "Date (Year)", y = "Total shootings per year", title = "Total annual shootings over 15 years in New York City")
+
+```
+
+# Conclusions
+
+The model performed fairly well during the first 18 months, but failed to predict the recent exponential increase in cases after July 2021. Furthermore, the final data point at the end of 2021 is unexpectedly low. It appears to be the only outlier in the data.
+
+```{r sessioninfo}
+sessionInfo()
+```
